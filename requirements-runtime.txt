@@ -48,7 +48,7 @@ mdurl==0.1.2
     # via markdown-it-py
 modal==1.5.5
     # via sartoria-spike
-multidict==6.8.0
+multidict==6.9.0
     # via
     #   aiohttp
     #   grpclib
