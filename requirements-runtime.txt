@@ -103,5 +103,5 @@ typing-inspection==0.4.4
     #   pydantic
 watchfiles==1.2.0
     # via modal
-yarl==1.24.5
+yarl==1.25.1
     # via aiohttp
