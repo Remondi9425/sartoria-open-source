@@ -1,0 +1,4 @@
+# SYNTHETIC example only; not measurements of a person or validation evidence.
+# Copy to data/ground_truth.csv for private research. Never commit real data.
+session_id,height_cm,waist,hip,thigh,knee,calf,ankle,inseam,outseam,rise
+synthetic-001,175,82,100,57,37,38,23,80,105,25

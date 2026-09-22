@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+/* The product commits to one look — a warm paper ground with navy ink — so
+   every colour is painted explicitly rather than inherited from the OS theme. */
+@theme {
+  --color-paper: #efede9;
+  --color-card: #fbfaf8;
+  --color-navy: #223a5e;
+  --color-navy-deep: #16243c;
+  --color-navy-soft: #2d4a72;
+  --color-rust: #c4562f;
+  --color-amber: #e0a458;
+  --color-ink: #1a1c2e;
+  --color-mute: #6e7489;
+  --color-faint: #9aa0b2;
+  --color-line: #dfdcd5;
+  --color-line-soft: #eae7e1;
+
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, monospace;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The label above every screen title: small, spaced, quiet. */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+
+/* Numbers are always mono — they are data, and they should read as data. */
+.figure {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes sweep {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(220%); }
+}
+.scanline { animation: sweep 2.6s cubic-bezier(.4,0,.3,1) infinite; }
+
+@keyframes breathe {
+  0%, 100% { opacity: .55; }
+  50%      { opacity: .9; }
+}
+.breathe { animation: breathe 2.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .scanline, .breathe { animation: none; }
+}

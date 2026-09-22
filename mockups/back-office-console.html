@@ -1,0 +1,982 @@
+<title>SartorIA Console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  /* The app commits to its own dark chrome — a deliberate single-theme product
+     surface, so every colour is painted explicitly rather than inherited. */
+  :root {
+    --bg: #101223;
+    --chrome: #171A2E;
+    --panel: #1D2138;
+    --panel-2: #242942;
+    --line: #2E3453;
+    --line-soft: #262B44;
+    --ink: #F1F2F8;
+    --ink-2: #A5ABC9;
+    --ink-3: #6E7699;
+    --amber: #E0A458;
+    --amber-dim: #3A2F1C;
+    --blue: #7FB2DE;
+    --blue-dim: #1C2C42;
+    --green: #6FC095;
+    --green-dim: #17301F;
+    --red: #EC8079;
+    --red-dim: #35211F;
+    --r: 8px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  /* ── shell ── */
+  .app { display: grid; grid-template-columns: 218px minmax(0, 1fr); min-height: 100vh; }
+  .rail { background: var(--chrome); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+  .brand { padding: 18px 18px 14px; display: flex; flex-direction: column; gap: 3px; }
+  .brand .wm { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+  .brand .wm em { font-style: normal; color: var(--amber); }
+  .brand .sub { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  nav { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; }
+  .navbtn {
+    display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: center; gap: 10px;
+    padding: 9px 10px; border: 0; border-radius: 6px; background: none; cursor: pointer;
+    color: var(--ink-2); font: inherit; text-align: left; width: 100%;
+  }
+  .navbtn:hover { background: var(--panel); color: var(--ink); }
+  .navbtn[aria-current="true"] { background: var(--panel-2); color: var(--ink); }
+  .navbtn .n {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 600;
+    width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--line); color: var(--ink-2);
+  }
+  .navbtn[aria-current="true"] .n { background: var(--amber); color: #101223; }
+  .navbtn.key .n { box-shadow: 0 0 0 1px var(--amber); }
+  .navbtn b { font-weight: 500; font-size: 13px; }
+  .navbtn small { display: block; font-size: 10.5px; color: var(--ink-3); line-height: 1.35; }
+  .rail-foot { margin-top: auto; padding: 14px 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; padding: 3px 8px;
+    border-radius: 999px; background: var(--amber-dim); color: var(--amber); border: 1px solid #4b3d22;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .who { font-size: 11.5px; color: var(--ink-3); }
+
+  main { padding: 22px 26px 40px; min-width: 0; }
+  .screen { display: none; }
+  .screen[data-active="true"] { display: block; }
+  .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 18px; flex-wrap: wrap; }
+  .head h1 { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -.01em; }
+  .head p { margin: 3px 0 0; font-size: 12.5px; color: var(--ink-2); max-width: 62ch; }
+  .route { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-3); }
+
+  .card { background: var(--panel); border: 1px solid var(--line-soft); border-radius: var(--r); }
+  .card > h2 {
+    margin: 0; padding: 11px 14px; font-size: 11px; font-weight: 600; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-3); border-bottom: 1px solid var(--line-soft);
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .card .body { padding: 14px; }
+  .grid { display: grid; gap: 14px; }
+
+  /* ── capture ── */
+  .cap { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+  .viewport {
+    position: relative; aspect-ratio: 9 / 11; background: #0B0D18;
+    border-radius: 6px; overflow: hidden; display: grid; place-items: center;
+  }
+  .viewport svg { width: 100%; height: 100%; display: block; }
+  .vp-tag {
+    position: absolute; top: 10px; left: 10px; font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; padding: 3px 7px; border-radius: 4px;
+    background: rgba(16,18,35,.82); border: 1px solid var(--line); color: var(--ink-2);
+  }
+  .vp-tag.rec { color: var(--red); border-color: #58312e; }
+  .film { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; margin-top: 10px; }
+  .frame { height: 30px; border-radius: 3px; background: var(--panel-2); border: 1px solid var(--line-soft); position: relative; overflow: hidden; }
+  .frame i { position: absolute; inset: auto 0 0 0; background: var(--green); display: block; }
+  .frame.bad i { background: var(--red); }
+  .filmcap { font-size: 10.5px; color: var(--ink-3); margin-top: 6px; }
+
+  .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+  .field label { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+  .field .inp {
+    display: flex; align-items: baseline; gap: 7px; background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px;
+  }
+  .field .inp b { font-family: "IBM Plex Mono", monospace; font-size: 19px; font-weight: 600; }
+  .field .inp span { font-size: 12px; color: var(--ink-3); }
+  .field .hint { font-size: 11px; color: var(--ink-3); }
+
+  .gates { display: flex; flex-direction: column; gap: 0; }
+  .gate {
+    display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+    padding: 9px 0; border-bottom: 1px solid var(--line-soft);
+  }
+  .gate:last-child { border-bottom: 0; }
+  .gate .mark { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+  .gate.ok .mark { background: var(--green-dim); color: var(--green); box-shadow: inset 0 0 0 1px #2b5a3d; }
+  .gate.fail .mark { background: var(--red-dim); color: var(--red); box-shadow: inset 0 0 0 1px #5b332f; }
+  .gate .nm { font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+  .gate.fail .nm { color: var(--red); }
+  .gate .ev { font-size: 10.5px; color: var(--ink-3); font-family: "IBM Plex Mono", monospace; }
+  .tagline { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); }
+
+  .coach {
+    background: var(--panel-2); border: 1px solid var(--line); border-left: 2px solid var(--amber);
+    border-radius: 0 6px 6px 0; padding: 11px 13px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .coach.bad { border-left-color: var(--red); }
+  .coach .k { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--amber); }
+  .coach.bad .k { color: var(--red); }
+  .coach p { margin: 0; font-size: 13px; }
+  .coach .verdict { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-3); }
+
+  .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .btn {
+    font: inherit; font-size: 12px; padding: 7px 12px; border-radius: 6px; cursor: pointer;
+    background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
+  }
+  .btn:hover { background: var(--line); }
+  .btn.primary { background: var(--amber); color: #101223; border-color: var(--amber); font-weight: 600; }
+  .btn.primary:hover { background: #eab776; }
+  .btn:focus-visible, .navbtn:focus-visible, textarea:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+  /* ── measurements ── */
+  .meas { display: flex; flex-direction: column; }
+  .m {
+    display: grid; grid-template-columns: 108px 74px minmax(90px, 1fr) 44px; align-items: center;
+    gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px;
+  }
+  .m:last-child { border-bottom: 0; }
+  .m .v { font-family: "IBM Plex Mono", monospace; font-weight: 600; text-align: right; }
+  .m .v s { text-decoration: none; color: var(--ink-3); font-weight: 400; font-size: 11px; }
+  .bar { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--green); }
+  .bar.mid i { background: var(--amber); }
+  .m .c { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-3); text-align: right; }
+
+  .stat { display: flex; gap: 22px; flex-wrap: wrap; }
+  .stat > div { display: flex; flex-direction: column; gap: 2px; }
+  .stat b { font-family: "IBM Plex Mono", monospace; font-size: 20px; font-weight: 600; }
+  .stat span { font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+
+  /* ── recommendation ── */
+  .sizes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .size {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 12px;
+    display: flex; flex-direction: column; gap: 4px; position: relative;
+  }
+  .size.pick { border-color: var(--amber); background: #2A2A44; }
+  .size .lab { font-family: "IBM Plex Mono", monospace; font-size: 17px; font-weight: 600; }
+  .size .sc { font-family: "IBM Plex Mono", monospace; font-size: 26px; font-weight: 600; line-height: 1; }
+  .size.pick .sc { color: var(--amber); }
+  .size .why { font-size: 11px; color: var(--ink-2); }
+  .size .flag { position: absolute; top: 10px; right: 10px; font-family: "IBM Plex Mono", monospace; font-size: 9.5px; letter-spacing: .08em; color: var(--amber); }
+
+  .advisor { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .advisor p { margin: 0; font-size: 13.5px; line-height: 1.6; }
+  mark { background: var(--amber-dim); color: var(--amber); padding: 0 3px; border-radius: 3px; font-weight: 500; }
+  .faith {
+    display: flex; align-items: center; gap: 8px; font-family: "IBM Plex Mono", monospace;
+    font-size: 11px; color: var(--green); background: var(--green-dim);
+    border: 1px solid #2b5a3d; border-radius: 6px; padding: 7px 10px;
+  }
+
+  /* ── agent console ── */
+  .console { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
+  .steps { display: flex; flex-direction: column; }
+  .step {
+    display: grid; grid-template-columns: 15px minmax(0, 1fr); gap: 11px;
+    padding: 10px 0; border-bottom: 1px solid var(--line-soft);
+  }
+  .step:last-child { border-bottom: 0; }
+  .step .rail-i { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .step .bead { width: 9px; height: 9px; border-radius: 50%; background: var(--line); margin-top: 4px; }
+  .step[data-state="done"] .bead { background: var(--green); }
+  .step[data-state="live"] .bead { background: var(--amber); box-shadow: 0 0 0 3px rgba(224,164,88,.22); }
+  .step[data-state="todo"] { opacity: .42; }
+  .step .top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .step .who2 { font-size: 12.5px; font-weight: 600; }
+  .step .tool { display: block; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--blue); margin-top: 2px; }
+  .step .meta { margin-left: auto; font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--ink-3); white-space: nowrap; }
+  .step .out { display: block; font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-2); margin-top: 3px; word-break: break-word; }
+  .badge {
+    font-family: "IBM Plex Mono", monospace; font-size: 9.5px; padding: 1px 6px; border-radius: 3px;
+    background: var(--blue-dim); color: var(--blue); border: 1px solid #27405C;
+  }
+  .badge.op { background: var(--amber-dim); color: var(--amber); }
+  .totals { display: flex; gap: 18px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--line-soft); margin-top: 4px; }
+
+  /* ── learning loop ── */
+  textarea {
+    width: 100%; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; padding: 10px 12px; font: inherit; font-size: 13px; resize: vertical; min-height: 78px;
+  }
+  .signal { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+  .sig { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 11px 12px; display: flex; flex-direction: column; gap: 5px; }
+  .sig .kv { display: flex; justify-content: space-between; gap: 10px; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; }
+  .sig .kv span { color: var(--ink-3); }
+  .sig .span-q { font-size: 11.5px; color: var(--ink-2); font-style: italic; border-left: 2px solid var(--amber); padding-left: 8px; }
+  .shift { display: flex; flex-direction: column; gap: 9px; }
+  .shift .row { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 12px; font-size: 12px; }
+  .track { position: relative; height: 22px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; }
+  .track .mid { position: absolute; top: 0; bottom: 0; width: 1px; left: 50%; background: var(--line); }
+  .track i { position: absolute; top: 4px; height: 12px; border-radius: 2px; }
+  .track .before { background: var(--ink-3); }
+  .track .after { background: var(--amber); }
+  .legend { display: flex; gap: 14px; font-size: 11px; color: var(--ink-3); }
+  .legend b { display: inline-block; width: 9px; height: 9px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; }
+
+  .flip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
+  .flip .col { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 5px; }
+  .flip .col.now { border-color: var(--amber); }
+  .flip .tag2 { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+  .flip .big { font-family: "IBM Plex Mono", monospace; font-size: 24px; font-weight: 600; }
+  .flip .col.now .big { color: var(--amber); }
+
+  .note { font-size: 11.5px; color: var(--ink-3); }
+  svg text { font-family: "IBM Plex Mono", monospace; }
+
+  @media (max-width: 1000px) {
+    .app { grid-template-columns: minmax(0, 1fr); }
+    .rail { flex-direction: row; align-items: center; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+    .brand { flex: 0 0 auto; }
+    nav { flex-direction: row; }
+    .navbtn { width: auto; grid-template-columns: 22px auto; }
+    .navbtn small { display: none; }
+    .rail-foot { display: none; }
+    .cap, .console, .flip { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <div class="wm">Sartor<em>IA</em></div>
+      <div class="sub">Fit console</div>
+    </div>
+    <nav id="nav" aria-label="Screens">
+      <button class="navbtn" data-go="capture" aria-current="true"><span class="n">1</span><span><b>Capture</b><small>gates · coach · convergence</small></span></button>
+      <button class="navbtn" data-go="profile"><span class="n">2</span><span><b>Profile</b><small>mesh · 9 measurements</small></span></button>
+      <button class="navbtn" data-go="fit"><span class="n">3</span><span><b>Recommendation</b><small>deltas · rationale</small></span></button>
+      <button class="navbtn key" data-go="agents"><span class="n">4</span><span><b>Agent console</b><small>graph · tools · cost</small></span></button>
+      <button class="navbtn key" data-go="loop"><span class="n">5</span><span><b>Learning loop</b><small>returns · calibration</small></span></button>
+    </nav>
+    <div class="rail-foot">
+      <span class="pill"><i class="dot"></i>DEMO_MODE=replay</span>
+      <div class="who">Session <span class="mono">a4f1·2026-09-08</span><br>Height 174 cm · 12.4 s clip</div>
+    </div>
+  </aside>
+
+  <main>
+    <!-- ═══ 1 · CAPTURE ═══ -->
+    <section class="screen" id="s-capture" data-active="true">
+      <div class="head">
+        <div>
+          <h1>Capture</h1>
+          <p>The coach decides what to ask for next and when there is enough evidence to stop. Toggle the failure case to see a blocking gate.</p>
+        </div>
+        <span class="route">/capture</span>
+      </div>
+
+      <div class="grid cap">
+        <div class="card">
+          <h2>Camera <span class="mono" id="clipState" style="color:var(--green)">12.4 s · 38 usable frames</span></h2>
+          <div class="body">
+            <div class="viewport">
+              <span class="vp-tag rec" id="vpTag">● REC · half turn</span>
+              <svg viewBox="0 0 550 675" role="img" aria-label="Silhouette of a standing person in frame, with the crown and heel extent markers used to resolve metric scale.">
+                <rect x="0" y="0" width="550" height="675" fill="#0B0D18"></rect>
+                <g id="figWrap" transform="scale(2.5)">
+                  <g stroke="#1B1F33" stroke-width="1">
+                    <line x1="55" y1="-40" x2="55" y2="310"></line>
+                    <line x1="165" y1="-40" x2="165" y2="310"></line>
+                    <line x1="0" y1="90" x2="220" y2="90"></line>
+                    <line x1="0" y1="180" x2="220" y2="180"></line>
+                  </g>
+                  <g fill="#2A3050">
+                    <circle id="fHead" cx="110" cy="34" r="13"></circle>
+                    <path d="M96 50 h28 l9 16 -6 42 h-34 l-6 -42 z"></path>
+                    <path d="M93 108 h34 l4 26 -7 2 -3 -14 -1 60 -5 44 h-12 l-5 -44 -1 -60 -3 14 -7 -2 z"></path>
+                    <rect x="85" y="66" width="7" height="44" rx="3"></rect>
+                    <rect x="128" y="66" width="7" height="44" rx="3"></rect>
+                    <rect x="93" y="244" width="14" height="6" rx="2"></rect>
+                    <rect x="113" y="244" width="14" height="6" rx="2"></rect>
+                  </g>
+                </g>
+                <!-- extent markers: what the head gate protects -->
+                <g id="extent" stroke="#6FC095" stroke-width="1.6" fill="none">
+                  <line id="crownLine" x1="105" y1="52" x2="445" y2="52" stroke-dasharray="8 6"></line>
+                  <line x1="105" y1="625" x2="445" y2="625" stroke-dasharray="8 6"></line>
+                  <line id="extBar" x1="115" y1="52" x2="115" y2="625"></line>
+                  <line id="extCapT" x1="105" y1="52" x2="125" y2="52"></line>
+                  <line x1="105" y1="625" x2="125" y2="625"></line>
+                </g>
+                <text id="extLabel" x="275" y="655" fill="#6FC095" font-size="12" text-anchor="middle">crown → heel · extent 229 px</text>
+                <text id="extScale" x="96" y="340" fill="#6FC095" font-size="12" transform="rotate(-90 96 340)" text-anchor="middle">s = 174 / 229</text>
+              </svg>
+            </div>
+            <div class="film" id="film" aria-hidden="true"><span class="frame"><i style="height:20px"></i></span><span class="frame"><i style="height:23px"></i></span><span class="frame"><i style="height:25px"></i></span><span class="frame"><i style="height:25px"></i></span><span class="frame"><i style="height:26px"></i></span><span class="frame"><i style="height:27px"></i></span><span class="frame bad"><i style="height:11px"></i></span><span class="frame"><i style="height:26px"></i></span><span class="frame"><i style="height:27px"></i></span><span class="frame"><i style="height:27px"></i></span><span class="frame bad"><i style="height:11px"></i></span><span class="frame"><i style="height:27px"></i></span></div>
+            <p class="filmcap">Per-frame pose confidence. Two frames dropped for motion blur.</p>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+          <div class="card">
+            <h2>Scale source</h2>
+            <div class="body" style="padding-bottom:6px">
+              <div class="field">
+                <label for="h">Reported height</label>
+                <div class="inp"><b>174</b><span>cm</span></div>
+                <span class="hint">Monocular video gives proportions, not centimetres. Height is what converts them.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Gates <span class="tagline" id="gateSummary">4 / 4 passed</span></h2>
+            <div class="body">
+              <div class="gates" id="gates"><div class="gate ok"><span class="mark">✓</span><span class="nm">head_visible</span><span class="ev">crown y=21 px</span></div><div class="gate ok"><span class="mark">✓</span><span class="nm">feet_visible</span><span class="ev">heel y=250 px</span></div><div class="gate ok"><span class="mark">✓</span><span class="nm">body_in_frame</span><span class="ev">coverage 0.79</span></div><div class="gate ok"><span class="mark">✓</span><span class="nm">min_frames</span><span class="ev">38 ≥ 24</span></div></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Coach</h2>
+            <div class="body" style="display:flex;flex-direction:column;gap:12px">
+              <div class="coach" id="coach">
+                <span class="k" id="coachK">stop_sufficient</span>
+                <p id="coachMsg">Shape has settled. You can stop filming — we have what we need.</p>
+                <span class="verdict" id="coachMeta">confidence 0.93 · 5 coaching turns · Opus 5</span>
+              </div>
+              <div>
+                <h2 style="border:0;padding:0 0 8px;font-size:11px">β variance vs τ</h2>
+                <svg viewBox="0 0 420 118" role="img" aria-label="Shape-parameter variance falling across aggregated frames and crossing the stop threshold at frame 30.">
+                  <line x1="34" y1="8" x2="34" y2="94" stroke="#2E3453"></line>
+                  <line x1="34" y1="94" x2="412" y2="94" stroke="#2E3453"></line>
+                  <line x1="34" y1="68" x2="412" y2="68" stroke="#E0A458" stroke-dasharray="4 3" stroke-width="1"></line>
+                  <text x="408" y="63" fill="#E0A458" font-size="9" text-anchor="end">τ = 0.035</text>
+                  <polyline id="betaLine" fill="none" stroke="#7FB2DE" stroke-width="2"
+                    points="34,12 68,29 102,44 136,55 170,64 204,71 238,77 272,82 306,86 340,88 374,89 408,90"></polyline>
+                  <circle id="betaDot" cx="408" cy="90" r="4" fill="#6FC095"></circle>
+                  <text x="0" y="16" fill="#6E7699" font-size="9">.42</text>
+                  <text x="0" y="97" fill="#6E7699" font-size="9">.02</text>
+                  <text x="34" y="110" fill="#6E7699" font-size="9">frame 4</text>
+                  <text x="408" y="110" fill="#6E7699" font-size="9" text-anchor="end">38</text>
+                  <text x="238" y="110" fill="#6E7699" font-size="9" text-anchor="middle">crossed τ at 30</text>
+                </svg>
+              </div>
+              <div class="btnrow">
+                <button class="btn" id="toggleFail">Show the head-cropped case</button>
+                <button class="btn primary" id="goProfile">Build profile →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 2 · PROFILE ═══ -->
+    <section class="screen" id="s-profile">
+      <div class="head">
+        <div>
+          <h1>Profile</h1>
+          <p>The worker exports the fitted leg mesh as a GLB; the browser only renders it. Measurement paths are fixed on SMPL topology.</p>
+        </div>
+        <span class="route">/profile</span>
+      </div>
+
+      <div class="grid" style="grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr)">
+        <div class="card">
+          <h2>Leg twin <span class="mono" style="color:var(--ink-3)">legs_a4f1.glb · 148 KB</span></h2>
+          <div class="body">
+            <svg viewBox="0 0 300 340" role="img" aria-label="Leg mesh with the nine measurement landmarks marked from waist to ankle.">
+              <rect x="0" y="0" width="300" height="340" fill="#141728" rx="6"></rect>
+              <g fill="#2A3050" stroke="#3C4570" stroke-width="1">
+                <path d="M104 28 h92 l7 34 -5 30 -8 26 -3 66 -4 60 -5 62 h-24 l-4 -62 -3 -60 -1 -50 -1 50 -3 60 -4 62 h-24 l-5 -62 -4 -60 -3 -66 -8 -26 -5 -30 z"></path>
+              </g>
+              <g stroke="#E0A458" stroke-width="1.1" fill="none">
+                <ellipse cx="150" cy="40" rx="47" ry="7"></ellipse>
+                <ellipse cx="150" cy="86" rx="52" ry="8"></ellipse>
+                <ellipse cx="124" cy="132" rx="22" ry="6"></ellipse>
+                <ellipse cx="122" cy="196" rx="16" ry="5"></ellipse>
+                <ellipse cx="121" cy="240" rx="15" ry="4.5"></ellipse>
+                <ellipse cx="120" cy="296" rx="10" ry="3.5"></ellipse>
+              </g>
+              <g stroke="#7FB2DE" stroke-width="1.1" stroke-dasharray="3 2" fill="none">
+                <path d="M150 112 L150 118 L124 128"></path>
+                <path d="M136 122 L124 300"></path>
+                <path d="M197 44 L206 44 L206 300 L196 300"></path>
+              </g>
+              <g fill="#A5ABC9" font-size="9">
+                <text x="205" y="41">waist</text>
+                <text x="207" y="90">hip / seat</text>
+                <text x="152" y="135">thigh</text>
+                <text x="146" y="199">knee</text>
+                <text x="142" y="243">calf</text>
+                <text x="136" y="299">ankle</text>
+                <text x="212" y="176">outseam</text>
+                <text x="60" y="176" text-anchor="end" fill="#7FB2DE">inseam</text>
+                <text x="60" y="120" text-anchor="end" fill="#7FB2DE">rise</text>
+              </g>
+              <path d="M62 172 L120 205" stroke="#7FB2DE" stroke-width="1" stroke-dasharray="3 2"></path>
+              <path d="M62 116 L146 118" stroke="#7FB2DE" stroke-width="1" stroke-dasharray="3 2"></path>
+            </svg>
+            <p class="note" style="margin:10px 0 0">Girths are convex-hull sections at the landmark plane; inseam and outseam are geodesic paths along the surface.</p>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+          <div class="card">
+            <h2>Measurements <span class="mono" style="color:var(--ink-3)">β aggregated over 38 frames</span></h2>
+            <div class="body">
+              <div class="meas" id="meas"><div class="m"><span>Waist girth</span><span class="v">82.4 <s>cm</s></span><span class="bar"><i style="width:91%"></i></span><span class="c">0.91</span></div><div class="m"><span>Hip / seat</span><span class="v">99.1 <s>cm</s></span><span class="bar"><i style="width:94%"></i></span><span class="c">0.94</span></div><div class="m"><span>Thigh girth</span><span class="v">57.3 <s>cm</s></span><span class="bar"><i style="width:88%"></i></span><span class="c">0.88</span></div><div class="m"><span>Knee girth</span><span class="v">38.6 <s>cm</s></span><span class="bar"><i style="width:86%"></i></span><span class="c">0.86</span></div><div class="m"><span>Calf girth</span><span class="v">37.2 <s>cm</s></span><span class="bar"><i style="width:90%"></i></span><span class="c">0.90</span></div><div class="m"><span>Ankle girth</span><span class="v">24.1 <s>cm</s></span><span class="bar"><i style="width:83%"></i></span><span class="c">0.83</span></div><div class="m"><span>Inseam</span><span class="v">80.6 <s>cm</s></span><span class="bar mid"><i style="width:79%"></i></span><span class="c">0.79</span></div><div class="m"><span>Outseam</span><span class="v">106.2 <s>cm</s></span><span class="bar"><i style="width:85%"></i></span><span class="c">0.85</span></div><div class="m"><span>Rise</span><span class="v">26.8 <s>cm</s></span><span class="bar mid"><i style="width:74%"></i></span><span class="c">0.74</span></div></div>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Plausibility — agent 2</h2>
+            <div class="body" style="display:flex;flex-direction:column;gap:12px">
+              <div class="stat">
+                <div><b style="color:var(--green)">1.42</b><span>Mahalanobis d</span></div>
+                <div><b>63rd</b><span>ANSUR II percentile</span></div>
+                <div><b style="color:var(--green)">accept</b><span>verdict</span></div>
+              </div>
+              <p class="note" style="margin:0">Checked against the ANSUR II covariance, not against each measurement alone — a 57 cm thigh is only implausible <em>given</em> an 82 cm waist.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 3 · RECOMMENDATION ═══ -->
+    <section class="screen" id="s-fit">
+      <div class="head">
+        <div>
+          <h1>Recommendation</h1>
+          <p>MAREA Denim · Slim Tapered · <span class="mono">Tier V</span> size chart, body measurements, 1.5&nbsp;% elastane.</p>
+        </div>
+        <span class="route">/fit/marea-slim-tapered</span>
+      </div>
+
+      <div class="grid" style="grid-template-columns:minmax(0,1fr) minmax(0,1.1fr)">
+        <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+          <div class="card">
+            <h2>Sizes</h2>
+            <div class="body">
+              <div class="sizes" id="sizes"><div class="size"><span class="lab">W30</span><span class="sc">71</span><span class="why">waist 2.6 cm tight — outside the window</span></div><div class="size pick"><span class="flag">RECOMMENDED</span><span class="lab">W31</span><span class="sc">88</span><span class="why">thigh 0.9 cm over, stretch absorbs it</span></div><div class="size"><span class="lab">W32</span><span class="sc">63</span><span class="why">waist 2.2 cm loose — a belt, not a fit</span></div></div>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Advisor — agent 4 <span class="badge op">Opus 5</span></h2>
+            <div class="body advisor">
+              <p id="advisorText">W31 is the closest fit. Your <mark>waist</mark> sits 0.4&nbsp;cm inside the tolerance window and the <mark>thigh</mark> is 0.9&nbsp;cm over — snug at first, and the 1.5&nbsp;% elastane will take it. The <mark>inseam</mark> runs 1.4&nbsp;cm long, so expect a small hem. W32 clears the thigh but leaves the waist 2.2&nbsp;cm loose, which is a belt, not a fit.</p>
+              <div class="faith"><span class="dot" style="width:7px;height:7px"></span>cited_landmarks ⊆ engine.rationale — 3/3 verified</div>
+              <p class="note" style="margin:0">The advisor never picks the size. It calls <span class="mono">run_fit_engine</span> and explains what came back, and every landmark it names is checked against the engine's own rationale.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Why — deltas per landmark <span class="mono" style="color:var(--ink-3)">W31</span></h2>
+          <div class="body">
+            <svg viewBox="0 0 440 300" role="img" aria-label="Per-landmark chart: the tolerance window as a band and the wearer's offset as a dot, for six landmarks at size W31.">
+              <line x1="240" y1="14" x2="240" y2="272" stroke="#3C4570" stroke-width="1"></line>
+              <text x="240" y="288" fill="#6E7699" font-size="9" text-anchor="middle">0</text>
+              <text x="150" y="288" fill="#6E7699" font-size="9" text-anchor="middle">−3 cm</text>
+              <text x="330" y="288" fill="#6E7699" font-size="9" text-anchor="middle">+3 cm</text>
+              <text x="330" y="12" fill="#6E7699" font-size="9" text-anchor="middle">looser</text>
+              <text x="150" y="12" fill="#6E7699" font-size="9" text-anchor="middle">tighter</text>
+              <g id="deltaRows"><rect x="180" y="23" width="120" height="18" rx="4" fill="#2E3453"></rect><line x1="240" y1="19" x2="240" y2="45" stroke="#3C4570" stroke-width="1"></line><line x1="240" y1="32" x2="252" y2="32" stroke="#6FC095" stroke-width="2"></line><circle cx="252" cy="32" r="5" fill="#6FC095"></circle><text x="16" y="36" fill="#A5ABC9" font-size="10">waist</text><text x="424" y="36" fill="#6FC095" font-size="10" text-anchor="end">+0.4</text><rect x="165" y="63" width="150" height="18" rx="4" fill="#2E3453"></rect><line x1="240" y1="59" x2="240" y2="85" stroke="#3C4570" stroke-width="1"></line><line x1="240" y1="72" x2="222" y2="72" stroke="#6FC095" stroke-width="2"></line><circle cx="222" cy="72" r="5" fill="#6FC095"></circle><text x="16" y="76" fill="#A5ABC9" font-size="10">hip</text><text x="424" y="76" fill="#6FC095" font-size="10" text-anchor="end">-0.6</text><rect x="195" y="103" width="90" height="18" rx="4" fill="#2E3453"></rect><line x1="240" y1="99" x2="240" y2="125" stroke="#3C4570" stroke-width="1"></line><line x1="240" y1="112" x2="267" y2="112" stroke="#E0A458" stroke-width="2"></line><circle cx="267" cy="112" r="5" fill="#E0A458"></circle><text x="16" y="116" fill="#A5ABC9" font-size="10">thigh</text><text x="424" y="116" fill="#E0A458" font-size="10" text-anchor="end">+0.9</text><rect x="180" y="143" width="120" height="18" rx="4" fill="#2E3453"></rect><line x1="240" y1="139" x2="240" y2="165" stroke="#3C4570" stroke-width="1"></line><line x1="240" y1="152" x2="246" y2="152" stroke="#6FC095" stroke-width="2"></line><circle cx="246" cy="152" r="5" fill="#6FC095"></circle><text x="16" y="156" fill="#A5ABC9" font-size="10">knee</text><text x="424" y="156" fill="#6FC095" font-size="10" text-anchor="end">+0.2</text><rect x="174" y="183" width="132" height="18" rx="4" fill="#2E3453"></rect><line x1="240" y1="179" x2="240" y2="205" stroke="#3C4570" stroke-width="1"></line><line x1="240" y1="192" x2="231" y2="192" stroke="#6FC095" stroke-width="2"></line><circle cx="231" cy="192" r="5" fill="#6FC095"></circle><text x="16" y="196" fill="#A5ABC9" font-size="10">calf</text><text x="424" y="196" fill="#6FC095" font-size="10" text-anchor="end">-0.3</text><rect x="180" y="223" width="120" height="18" rx="4" fill="#2E3453"></rect><line x1="240" y1="219" x2="240" y2="245" stroke="#3C4570" stroke-width="1"></line><line x1="240" y1="232" x2="282" y2="232" stroke="#E0A458" stroke-width="2"></line><circle cx="282" cy="232" r="5" fill="#E0A458"></circle><text x="16" y="236" fill="#A5ABC9" font-size="10">inseam</text><text x="424" y="236" fill="#E0A458" font-size="10" text-anchor="end">+1.4</text></g>
+            </svg>
+            <div class="legend" style="margin-top:8px">
+              <span><b style="background:#2E3453"></b>tolerance window</span>
+              <span><b style="background:#6FC095"></b>inside</span>
+              <span><b style="background:#E0A458"></b>at the edge</span>
+              <span><b style="background:#EC8079"></b>outside</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 4 · AGENT CONSOLE ═══ -->
+    <section class="screen" id="s-agents">
+      <div class="head">
+        <div>
+          <h1>Agent console</h1>
+          <p>LangGraph checkpoints to Postgres, so this view is a Supabase Realtime subscription to the graph's own state — not a progress spinner.</p>
+        </div>
+        <span class="route">/runs/a4f1</span>
+      </div>
+
+      <div class="grid console">
+        <div class="card">
+          <h2>Graph <span class="mono" id="nodeState" style="color:var(--amber)">fit_advisor · running</span></h2>
+          <div class="body">
+            <svg viewBox="0 0 420 320" role="img" aria-label="Agent graph with the orchestrator routing to six agents over a deterministic core, the fit advisor node currently active.">
+              <g stroke="#2E3453" stroke-width="1.4" fill="none">
+                <path d="M210 46 L210 66"></path>
+                <path d="M210 66 L70 66 L70 86"></path>
+                <path d="M210 66 L350 66 L350 86"></path>
+                <path d="M70 128 L70 148"></path>
+                <path d="M210 66 L210 86"></path>
+                <path d="M210 128 L210 148"></path>
+                <path d="M350 128 L350 148"></path>
+                <path d="M70 190 L70 236"></path>
+                <path d="M210 190 L210 236"></path>
+              </g>
+              <g id="nodes"><rect x="14" y="86" width="112" height="42" rx="6" fill="#1D2138" stroke="#2b5a3d" stroke-width="1.1"></rect><text x="70" y="106" fill="#6FC095" font-size="9.5" text-anchor="middle" font-weight="600">capture_coach</text><text x="70" y="119" fill="#6E7699" font-size="8.5" text-anchor="middle">done</text><rect x="154" y="86" width="112" height="42" rx="6" fill="#1D2138" stroke="#2b5a3d" stroke-width="1.1"></rect><text x="210" y="106" fill="#6FC095" font-size="9.5" text-anchor="middle" font-weight="600">catalog_ingest</text><text x="210" y="119" fill="#6E7699" font-size="8.5" text-anchor="middle">done</text><rect x="294" y="86" width="112" height="42" rx="6" fill="#1D2138" stroke="#2E3453" stroke-width="1.1"></rect><text x="350" y="106" fill="#6E7699" font-size="9.5" text-anchor="middle" font-weight="600">return_analyst</text><text x="350" y="119" fill="#6E7699" font-size="8.5" text-anchor="middle">idle</text><rect x="14" y="148" width="112" height="42" rx="6" fill="#1D2138" stroke="#2b5a3d" stroke-width="1.1"></rect><text x="70" y="168" fill="#6FC095" font-size="9.5" text-anchor="middle" font-weight="600">anthro_valid</text><text x="70" y="181" fill="#6E7699" font-size="8.5" text-anchor="middle">done</text><rect x="154" y="148" width="112" height="42" rx="6" fill="#2A2A44" stroke="#E0A458" stroke-width="1.6"></rect><text x="210" y="168" fill="#E0A458" font-size="9.5" text-anchor="middle" font-weight="600">fit_advisor</text><text x="210" y="181" fill="#6E7699" font-size="8.5" text-anchor="middle">live</text><rect x="294" y="148" width="112" height="42" rx="6" fill="#1D2138" stroke="#2E3453" stroke-width="1.1"></rect><text x="350" y="168" fill="#6E7699" font-size="9.5" text-anchor="middle" font-weight="600">review_agent</text><text x="350" y="181" fill="#6E7699" font-size="8.5" text-anchor="middle">idle</text></g>
+              <rect x="14" y="236" width="270" height="46" rx="6" fill="#1C2C42" stroke="#7FB2DE" stroke-width="1.2"></rect>
+              <text x="149" y="256" fill="#7FB2DE" font-size="10.5" text-anchor="middle" font-weight="600">Deterministic core · MCP</text>
+              <text x="149" y="271" fill="#A5ABC9" font-size="9" text-anchor="middle">measure · fit engine · calibrator</text>
+              <rect x="298" y="236" width="108" height="46" rx="6" fill="#35211F" stroke="#EC8079" stroke-width="1.2"></rect>
+              <text x="352" y="256" fill="#EC8079" font-size="10.5" text-anchor="middle" font-weight="600">Review queue</text>
+              <text x="352" y="271" fill="#A5ABC9" font-size="9" text-anchor="middle">0 pending</text>
+              <rect x="140" y="14" width="140" height="32" rx="6" fill="#2A2A44" stroke="#E0A458" stroke-width="1.3"></rect>
+              <text x="210" y="34" fill="#E0A458" font-size="11" text-anchor="middle" font-weight="600">Orchestrator</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Trace <span class="mono" style="color:var(--ink-3)" id="traceCount">step 8 / 9</span></h2>
+          <div class="body">
+            <div class="steps" id="steps"><div class="step" data-state="done"><span class="rail-i"><span class="bead"></span></span><span><span class="top"><span class="who2">capture_coach</span><span class="badge">Haiku 4.5</span><span class="meta">210 ms · 620 tok</span></span><span class="tool">beta_variance()</span><span class="out">0.031 < τ</span></span></div><div class="step" data-state="done"><span class="rail-i"><span class="bead"></span></span><span><span class="top"><span class="who2">capture_coach</span><span class="badge op">Opus 5</span><span class="meta">980 ms · 2140 tok</span></span><span class="tool">→ CaptureAssessment</span><span class="out">verdict "stop_sufficient", conf 0.93</span></span></div><div class="step" data-state="done"><span class="rail-i"><span class="bead"></span></span><span><span class="top"><span class="who2">anthro_valid</span><span class="badge">Haiku 4.5</span><span class="meta">160 ms · 410 tok</span></span><span class="tool">mahalanobis_vs_ansur()</span><span class="out">d = 1.42 · 63rd pct</span></span></div><div class="step" data-state="done"><span class="rail-i"><span class="bead"></span></span><span><span class="top"><span class="who2">anthro_valid</span><span class="badge">Haiku 4.5</span><span class="meta">240 ms · 680 tok</span></span><span class="tool">→ ValidationVerdict</span><span class="out">verdict "accept"</span></span></div><div class="step" data-state="done"><span class="rail-i"><span class="bead"></span></span><span><span class="top"><span class="who2">catalog_ingest</span><span class="badge" style="background:#242942;color:#6E7699;border-color:#2E3453">tool</span><span class="meta">420 ms · no tokens</span></span><span class="tool">fetch_page()</span><span class="out">marea.example/size-guide · 41 KB</span></span></div><div class="step" data-state="done"><span class="rail-i"><span class="bead"></span></span><span><span class="top"><span class="who2">catalog_ingest</span><span class="badge">Haiku 4.5</span><span class="meta">1310 ms · 5900 tok</span></span><span class="tool">→ SizeChartExtraction</span><span class="out">kind "body" · quote verified · schema retry ×1</span></span></div><div class="step" data-state="done"><span class="rail-i"><span class="bead"></span></span><span><span class="top"><span class="who2">fit_advisor</span><span class="badge" style="background:#242942;color:#6E7699;border-color:#2E3453">tool</span><span class="meta">90 ms · no tokens</span></span><span class="tool">run_fit_engine()</span><span class="out">W31 score 88 · 6 landmarks in rationale</span></span></div><div class="step" data-state="live"><span class="rail-i"><span class="bead"></span></span><span><span class="top"><span class="who2">fit_advisor</span><span class="badge op">Opus 5</span><span class="meta">0 ms · no tokens</span></span><span class="tool">→ FitExplanation</span><span class="out">waiting…</span></span></div><div class="step" data-state="todo"><span class="rail-i"><span class="bead"></span></span><span><span class="top"><span class="who2">review_agent</span><span class="badge" style="background:#242942;color:#6E7699;border-color:#2E3453">tool</span><span class="meta">—</span></span><span class="tool">run_suite()</span><span class="out">not started</span></span></div></div>
+            <div class="totals">
+              <div class="stat">
+                <div><b id="tLat">3.4 s</b><span>wall clock</span></div>
+                <div><b id="tTok">9.8 k</b><span>tokens</span></div>
+                <div><b id="tCost">$0.020</b><span>cost</span></div>
+                <div><b id="tRetry">1</b><span>schema retry</span></div>
+              </div>
+            </div>
+            <div class="btnrow">
+              <button class="btn" id="replay">Replay this run</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 5 · LEARNING LOOP ═══ -->
+    <section class="screen" id="s-loop">
+      <div class="head">
+        <div>
+          <h1>Learning loop</h1>
+          <p>The return is where the signal is densest. Free text becomes a landmark-level label, the brand calibration moves, and the next recommendation changes.</p>
+        </div>
+        <span class="route">/outcomes/a4f1</span>
+      </div>
+
+      <div class="grid" style="grid-template-columns:minmax(0,1fr) minmax(0,1.05fr)">
+        <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+          <div class="card">
+            <h2>Return reason <span class="mono" style="color:var(--ink-3)">order 8812 · W31 · returned</span></h2>
+            <div class="body" style="display:flex;flex-direction:column;gap:10px">
+              <textarea id="reason" spellcheck="false">Mi stringevano in vita e il cavallo era troppo corto, per il resto perfetti.</textarea>
+              <div class="btnrow" style="margin:0">
+                <button class="btn primary" id="parse">Parse into signal</button>
+                <button class="btn" id="reset">Reset</button>
+              </div>
+              <p class="note" style="margin:0">Outcome source: <span class="mono">retailer_webhook</span> · confidence 1.00. The text supplies the <em>reason</em>; the webhook supplied the outcome.</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Structured signal — agent 5 <span class="badge">Haiku 4.5</span></h2>
+            <div class="body">
+              <div class="signal" id="signal"><p class="note" style="margin:0">Press <em>Parse into signal</em> to run the extraction.</p></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+          <div class="card">
+            <h2>Calibration · MAREA Denim, slim tapered</h2>
+            <div class="body" style="display:flex;flex-direction:column;gap:12px">
+              <div class="shift" id="shift"><div class="row"><span class="mono" style="color:var(--ink-2)">waist</span><span class="track"><span class="mid"></span><i class="before" style="left:calc(50% - 36.4px);width:36.4px;height:6px;top:4px"></i></span></div><div class="row"><span class="mono" style="color:var(--ink-2)">rise</span><span class="track"><span class="mid"></span><i class="before" style="left:calc(50% - 13px);width:13px;height:6px;top:4px"></i></span></div><div class="row"><span class="mono" style="color:var(--ink-2)">thigh</span><span class="track"><span class="mid"></span><i class="before" style="left:50%;width:7.8px;height:6px;top:4px"></i></span></div><div class="row"><span class="mono" style="color:var(--ink-2)">inseam</span><span class="track"><span class="mid"></span><i class="before" style="left:50%;width:2px;height:6px;top:4px"></i></span></div></div>
+              <div class="legend">
+                <span><b style="background:#6E7699"></b>before this outcome</span>
+                <span><b style="background:#E0A458"></b>after</span>
+              </div>
+              <p class="note" style="margin:0">Learned offset per <span class="mono">(brand, category, landmark)</span> — 1 247 outcomes so far, 312 on this brand.</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Effect on the recommendation</h2>
+            <div class="body" style="display:flex;flex-direction:column;gap:10px">
+              <div class="flip">
+                <div class="col">
+                  <span class="tag2">size chart only</span>
+                  <span class="big">W31</span>
+                  <span class="note">fit 88 · waist within tolerance</span>
+                </div>
+                <div class="col now">
+                  <span class="tag2">calibrated</span>
+                  <span class="big" id="newSize">W31</span>
+                  <span class="note" id="newWhy">no outcomes applied yet</span>
+                </div>
+              </div>
+              <p class="note" style="margin:0">This brand's waist runs 1.8&nbsp;cm tighter than its published chart. No size chart says so — only the returns do.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ── navigation ───────────────────────────────────────────────── */
+  var nav = document.getElementById("nav");
+  function go(id) {
+    var list = document.querySelectorAll(".screen");
+    for (var i = 0; i < list.length; i++) {
+      list[i].setAttribute("data-active", list[i].id === "s-" + id ? "true" : "false");
+    }
+    var btns = nav.querySelectorAll(".navbtn");
+    for (var j = 0; j < btns.length; j++) {
+      btns[j].setAttribute("aria-current", btns[j].dataset.go === id ? "true" : "false");
+    }
+    window.scrollTo(0, 0);
+  }
+  nav.addEventListener("click", function (e) {
+    var b = e.target.closest(".navbtn");
+    if (b) go(b.dataset.go);
+  });
+  document.getElementById("goProfile").addEventListener("click", function () { go("profile"); });
+
+  /* ── 1 · capture ──────────────────────────────────────────────── */
+  var GATES_OK = [
+    { n: "head_visible",  ok: true,  ev: "crown y=21 px" },
+    { n: "feet_visible",  ok: true,  ev: "heel y=250 px" },
+    { n: "body_in_frame", ok: true,  ev: "coverage 0.79" },
+    { n: "min_frames",    ok: true,  ev: "38 ≥ 24" }
+  ];
+  var GATES_BAD = [
+    { n: "head_visible",  ok: false, ev: "crown not detected" },
+    { n: "feet_visible",  ok: true,  ev: "heel y=250 px" },
+    { n: "body_in_frame", ok: false, ev: "coverage 0.94" },
+    { n: "min_frames",    ok: true,  ev: "31 ≥ 24" }
+  ];
+  var gatesEl = document.getElementById("gates");
+  function paintGates(rows) {
+    var html = "";
+    for (var i = 0; i < rows.length; i++) {
+      var g = rows[i];
+      html += '<div class="gate ' + (g.ok ? "ok" : "fail") + '">' +
+        '<span class="mark">' + (g.ok ? "✓" : "✕") + "</span>" +
+        '<span class="nm">' + g.n + "</span>" +
+        '<span class="ev">' + g.ev + "</span></div>";
+    }
+    gatesEl.innerHTML = html;
+    var passed = rows.filter(function (g) { return g.ok; }).length;
+    document.getElementById("gateSummary").textContent = passed + " / " + rows.length + " passed";
+  }
+
+  var film = document.getElementById("film");
+  (function () {
+    var conf = [72, 81, 88, 91, 94, 96, 41, 93, 95, 97, 38, 96];
+    var html = "";
+    for (var i = 0; i < conf.length; i++) {
+      var bad = conf[i] < 60;
+      html += '<span class="frame' + (bad ? " bad" : "") + '"><i style="height:' +
+              Math.round(conf[i] * 0.28) + 'px"></i></span>';
+    }
+    film.innerHTML = html;
+  })();
+
+  var failing = false;
+  var els = {
+    coach: document.getElementById("coach"),
+    coachK: document.getElementById("coachK"),
+    coachMsg: document.getElementById("coachMsg"),
+    coachMeta: document.getElementById("coachMeta"),
+    head: document.getElementById("fHead"),
+    figWrap: document.getElementById("figWrap"),
+    crownLine: document.getElementById("crownLine"),
+    extCapT: document.getElementById("extCapT"),
+    extBar: document.getElementById("extBar"),
+    extent: document.getElementById("extent"),
+    extLabel: document.getElementById("extLabel"),
+    extScale: document.getElementById("extScale"),
+    vpTag: document.getElementById("vpTag"),
+    clip: document.getElementById("clipState"),
+    btn: document.getElementById("toggleFail"),
+    go: document.getElementById("goProfile")
+  };
+  function paintCapture() {
+    if (!failing) {
+      paintGates(GATES_OK);
+      els.coach.className = "coach";
+      els.coachK.textContent = "stop_sufficient";
+      els.coachMsg.textContent = "Shape has settled. You can stop filming — we have what we need.";
+      els.coachMeta.textContent = "confidence 0.93 · 5 coaching turns · Opus 5";
+      els.figWrap.setAttribute("transform", "scale(2.5)");
+      els.head.style.opacity = "1";
+      els.crownLine.style.opacity = "1";
+      els.extCapT.style.opacity = "1";
+      els.extBar.setAttribute("y1", "52");
+      els.extBar.removeAttribute("stroke-dasharray");
+      els.extent.setAttribute("stroke", "#6FC095");
+      els.extLabel.setAttribute("fill", "#6FC095");
+      els.extLabel.textContent = "crown → heel · extent 229 px";
+      els.extScale.setAttribute("fill", "#6FC095");
+      els.extScale.textContent = "s = 174 / 229";
+      els.vpTag.textContent = "● REC · half turn";
+      els.vpTag.className = "vp-tag rec";
+      els.clip.textContent = "12.4 s · 38 usable frames";
+      els.clip.style.color = "var(--green)";
+      els.btn.textContent = "Show the head-cropped case";
+      els.go.disabled = false;
+      els.go.style.opacity = "1";
+    } else {
+      paintGates(GATES_BAD);
+      els.coach.className = "coach bad";
+      els.coachK.textContent = "recapture · blocking";
+      els.coachMsg.textContent = "We can’t see the top of your head. We need your full body, head to feet, to turn the scan into centimetres — move the phone further away and record again.";
+      els.coachMeta.textContent = "session discarded · no partial measurements kept";
+      els.figWrap.setAttribute("transform", "scale(2.5) translate(0,-27)");
+      els.head.style.opacity = "0";
+      els.crownLine.style.opacity = "0";
+      els.extCapT.style.opacity = "0";
+      els.extBar.setAttribute("y1", "0");
+      els.extBar.setAttribute("stroke-dasharray", "6 6");
+      els.extent.setAttribute("stroke", "#EC8079");
+      els.extLabel.setAttribute("fill", "#EC8079");
+      els.extLabel.textContent = "crown not in frame · extent unknown";
+      els.extScale.setAttribute("fill", "#EC8079");
+      els.extScale.textContent = "s = 174 / ???";
+      els.vpTag.textContent = "✕ crown outside frame";
+      els.vpTag.className = "vp-tag rec";
+      els.clip.textContent = "9.1 s · 31 frames · unusable";
+      els.clip.style.color = "var(--red)";
+      els.btn.textContent = "Back to the good capture";
+      els.go.disabled = true;
+      els.go.style.opacity = ".4";
+    }
+  }
+  els.btn.addEventListener("click", function () { failing = !failing; paintCapture(); });
+  paintCapture();
+
+  /* ── 2 · measurements ─────────────────────────────────────────── */
+  var MEAS = [
+    ["Waist girth",  82.4, 0.91, "section"],
+    ["Hip / seat",   99.1, 0.94, "section"],
+    ["Thigh girth",  57.3, 0.88, "section"],
+    ["Knee girth",   38.6, 0.86, "section"],
+    ["Calf girth",   37.2, 0.90, "section"],
+    ["Ankle girth",  24.1, 0.83, "section"],
+    ["Inseam",       80.6, 0.79, "geodesic"],
+    ["Outseam",     106.2, 0.85, "geodesic"],
+    ["Rise",         26.8, 0.74, "vertical"]
+  ];
+  (function () {
+    var html = "";
+    for (var i = 0; i < MEAS.length; i++) {
+      var m = MEAS[i], c = m[2];
+      html += '<div class="m"><span>' + m[0] + "</span>" +
+        '<span class="v">' + m[1].toFixed(1) + " <s>cm</s></span>" +
+        '<span class="bar' + (c < 0.8 ? " mid" : "") + '"><i style="width:' + Math.round(c * 100) + '%"></i></span>' +
+        '<span class="c">' + c.toFixed(2) + "</span></div>";
+    }
+    document.getElementById("meas").innerHTML = html;
+  })();
+
+  /* ── 3 · recommendation ───────────────────────────────────────── */
+  var SIZES = [
+    { lab: "W30", sc: 71, why: "waist 2.6 cm tight — outside the window", pick: false },
+    { lab: "W31", sc: 88, why: "thigh 0.9 cm over, stretch absorbs it",   pick: true  },
+    { lab: "W32", sc: 63, why: "waist 2.2 cm loose — a belt, not a fit",  pick: false }
+  ];
+  (function () {
+    var html = "";
+    for (var i = 0; i < SIZES.length; i++) {
+      var s = SIZES[i];
+      html += '<div class="size' + (s.pick ? " pick" : "") + '">' +
+        (s.pick ? '<span class="flag">RECOMMENDED</span>' : "") +
+        '<span class="lab">' + s.lab + "</span>" +
+        '<span class="sc">' + s.sc + "</span>" +
+        '<span class="why">' + s.why + "</span></div>";
+    }
+    document.getElementById("sizes").innerHTML = html;
+  })();
+
+  // delta chart: tolerance band + the wearer's offset, one row per landmark
+  (function () {
+    var rows = [
+      ["waist",  0.4, 2.0],
+      ["hip",   -0.6, 2.5],
+      ["thigh",  0.9, 1.5],
+      ["knee",   0.2, 2.0],
+      ["calf",  -0.3, 2.2],
+      ["inseam", 1.4, 2.0]
+    ];
+    var cx = 240, scale = 30, top = 32, gap = 40, out = "";
+    for (var i = 0; i < rows.length; i++) {
+      var name = rows[i][0], d = rows[i][1], tol = rows[i][2];
+      var y = top + i * gap;
+      var ratio = Math.abs(d) / tol;
+      var col = ratio > 1 ? "#EC8079" : (ratio > 0.55 ? "#E0A458" : "#6FC095");
+      out += '<rect x="' + (cx - tol * scale) + '" y="' + (y - 9) + '" width="' + (tol * 2 * scale) +
+             '" height="18" rx="4" fill="#2E3453"></rect>';
+      out += '<line x1="' + cx + '" y1="' + (y - 13) + '" x2="' + cx + '" y2="' + (y + 13) +
+             '" stroke="#3C4570" stroke-width="1"></line>';
+      out += '<line x1="' + cx + '" y1="' + y + '" x2="' + (cx + d * scale) + '" y2="' + y +
+             '" stroke="' + col + '" stroke-width="2"></line>';
+      out += '<circle cx="' + (cx + d * scale) + '" cy="' + y + '" r="5" fill="' + col + '"></circle>';
+      out += '<text x="16" y="' + (y + 4) + '" fill="#A5ABC9" font-size="10">' + name + "</text>";
+      out += '<text x="424" y="' + (y + 4) + '" fill="' + col + '" font-size="10" text-anchor="end">' +
+             (d > 0 ? "+" : "") + d.toFixed(1) + "</text>";
+    }
+    document.getElementById("deltaRows").innerHTML = out;
+  })();
+
+  /* ── 4 · agent console ────────────────────────────────────────── */
+  var NODES = [
+    ["capture_coach",  14,  86, "done"],
+    ["catalog_ingest", 154, 86, "done"],
+    ["return_analyst", 294, 86, "idle"],
+    ["anthro_valid",   14, 148, "done"],
+    ["fit_advisor",    154, 148, "live"],
+    ["review_agent",   294, 148, "idle"]
+  ];
+  (function () {
+    var out = "";
+    for (var i = 0; i < NODES.length; i++) {
+      var n = NODES[i], x = n[1], y = n[2], st = n[3];
+      var fill = st === "live" ? "#2A2A44" : "#1D2138";
+      var stroke = st === "live" ? "#E0A458" : (st === "done" ? "#2b5a3d" : "#2E3453");
+      var tc = st === "live" ? "#E0A458" : (st === "done" ? "#6FC095" : "#6E7699");
+      out += '<rect x="' + x + '" y="' + y + '" width="112" height="42" rx="6" fill="' + fill +
+             '" stroke="' + stroke + '" stroke-width="' + (st === "live" ? 1.6 : 1.1) + '"></rect>';
+      out += '<text x="' + (x + 56) + '" y="' + (y + 20) + '" fill="' + tc +
+             '" font-size="9.5" text-anchor="middle" font-weight="600">' + n[0] + "</text>";
+      out += '<text x="' + (x + 56) + '" y="' + (y + 33) + '" fill="#6E7699" font-size="8.5" text-anchor="middle">' +
+             st + "</text>";
+    }
+    document.getElementById("nodes").innerHTML = out;
+  })();
+
+  var TRACE = [
+    ["capture_coach",  "beta_variance()",        "0.031 < τ",                              "Haiku 4.5", 210,  620],
+    ["capture_coach",  "→ CaptureAssessment",    'verdict "stop_sufficient", conf 0.93',    "Opus 5",    980, 2140],
+    ["anthro_valid",   "mahalanobis_vs_ansur()", "d = 1.42 · 63rd pct",                     "Haiku 4.5", 160,  410],
+    ["anthro_valid",   "→ ValidationVerdict",    'verdict "accept"',                        "Haiku 4.5", 240,  680],
+    ["catalog_ingest", "fetch_page()",           "marea.example/size-guide · 41 KB",        "—",         420,    0],
+    ["catalog_ingest", "→ SizeChartExtraction",  'kind "body" · quote verified · schema retry ×1', "Haiku 4.5", 1310, 5900],
+    ["fit_advisor",    "run_fit_engine()",       "W31 score 88 · 6 landmarks in rationale", "—",         90,     0],
+    ["fit_advisor",    "→ FitExplanation",       "waiting…",                                "Opus 5",    0,      0],
+    ["review_agent",   "run_suite()",            "queued",                                 "—",         0,      0]
+  ];
+  var stepsEl = document.getElementById("steps");
+  function paintTrace(upto) {
+    var out = "", lat = 0, tok = 0;
+    for (var i = 0; i < TRACE.length; i++) {
+      var t = TRACE[i];
+      var st = i < upto ? "done" : (i === upto ? "live" : "todo");
+      if (st === "done") { lat += t[4]; tok += t[5]; }
+      var badge = t[3] === "—" ? '<span class="badge" style="background:#242942;color:#6E7699;border-color:#2E3453">tool</span>'
+                : '<span class="badge' + (t[3].indexOf("Opus") === 0 ? " op" : "") + '">' + t[3] + "</span>";
+      out += '<div class="step" data-state="' + st + '">' +
+        '<span class="rail-i"><span class="bead"></span></span><span>' +
+        '<span class="top"><span class="who2">' + t[0] + "</span>" + badge +
+        '<span class="meta">' + (st === "todo" ? "—" : (t[4] + " ms · " + (t[5] ? t[5] + " tok" : "no tokens"))) + "</span></span>" +
+        '<span class="tool">' + t[1] + "</span>" +
+        '<span class="out">' + (st === "todo" ? "not started" : t[2]) + "</span>" +
+        "</span></div>";
+    }
+    stepsEl.innerHTML = out;
+    document.getElementById("traceCount").textContent = "step " + Math.min(upto + 1, TRACE.length) + " / " + TRACE.length;
+    document.getElementById("tLat").textContent = (lat / 1000).toFixed(1) + " s";
+    document.getElementById("tTok").textContent = (tok / 1000).toFixed(1) + " k";
+    document.getElementById("tCost").textContent = "$" + (tok * 0.0000012 + 0.008).toFixed(3);
+  }
+  paintTrace(7);
+
+  var timer = null;
+  document.getElementById("replay").addEventListener("click", function () {
+    if (timer) { clearInterval(timer); timer = null; }
+    var i = 0;
+    paintTrace(0);
+    timer = setInterval(function () {
+      i++;
+      paintTrace(i);
+      if (i >= 7) { clearInterval(timer); timer = null; }
+    }, 520);
+  });
+
+  /* ── 5 · learning loop ────────────────────────────────────────── */
+  var SIGNALS = [
+    { landmark: "waist", direction: "too_tight", magnitude: "moderate", conf: 0.91, span: "Mi stringevano in vita" },
+    { landmark: "rise",  direction: "too_short", magnitude: "slight",   conf: 0.78, span: "il cavallo era troppo corto" }
+  ];
+  var CAL = [
+    ["waist",  -1.4, -1.8],
+    ["rise",   -0.5, -0.9],
+    ["thigh",   0.3,  0.3],
+    ["inseam",  0.0,  0.0]
+  ];
+  var signalEl = document.getElementById("signal");
+  var shiftEl = document.getElementById("shift");
+
+  function paintShift(applied) {
+    var out = "", scale = 26;
+    for (var i = 0; i < CAL.length; i++) {
+      var name = CAL[i][0], before = CAL[i][1], after = applied ? CAL[i][2] : CAL[i][1];
+      out += '<div class="row"><span class="mono" style="color:var(--ink-2)">' + name + "</span>" +
+        '<span class="track"><span class="mid"></span>' +
+        bar(before, "before", scale) + (applied ? bar(after, "after", scale) : "") +
+        '</span></div>';
+    }
+    shiftEl.innerHTML = out;
+    function bar(v, cls, sc) {
+      var w = Math.abs(v) * sc;
+      var left = v < 0 ? "calc(50% - " + w + "px)" : "50%";
+      return '<i class="' + cls + '" style="left:' + left + ";width:" + Math.max(w, 2) + "px;" +
+             (cls === "after" ? "height:6px;top:12px" : "height:6px;top:4px") + '"></i>';
+    }
+  }
+  paintShift(false);
+
+  function paintSignal(rows) {
+    if (!rows.length) {
+      signalEl.innerHTML = '<p class="note" style="margin:0">Press <em>Parse into signal</em> to run the extraction.</p>';
+      return;
+    }
+    var out = "";
+    for (var i = 0; i < rows.length; i++) {
+      var s = rows[i];
+      out += '<div class="sig">' +
+        '<div class="kv"><span>landmark</span><b style="color:var(--amber)">' + s.landmark + "</b></div>" +
+        '<div class="kv"><span>direction</span><b>' + s.direction + "</b></div>" +
+        '<div class="kv"><span>magnitude</span><b>' + s.magnitude + "</b></div>" +
+        '<div class="kv"><span>confidence</span><b>' + s.conf.toFixed(2) + "</b></div>" +
+        '<div class="span-q">“' + s.span + "”</div></div>";
+    }
+    signalEl.innerHTML = out;
+  }
+  paintSignal([]);
+
+  document.getElementById("parse").addEventListener("click", function () {
+    paintSignal(SIGNALS);
+    paintShift(true);
+    document.getElementById("newSize").textContent = "W32";
+    document.getElementById("newWhy").textContent = "waist offset −1.8 cm applied · fit 84 vs 71 for W31";
+    document.getElementById("newWhy").style.color = "var(--amber)";
+  });
+  document.getElementById("reset").addEventListener("click", function () {
+    paintSignal([]);
+    paintShift(false);
+    document.getElementById("newSize").textContent = "W31";
+    document.getElementById("newWhy").textContent = "no outcomes applied yet";
+    document.getElementById("newWhy").style.color = "";
+  });
+})();
+</script>

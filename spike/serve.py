@@ -1,0 +1,366 @@
+"""The measurement engine behind HTTP.
+
+A thin front: it validates the upload, hands the bytes to whatever function
+actually measures, and shapes the answer. The measuring runs on a GPU
+container — see modal_app.py — so this layer stays cheap and does not hold a
+GPU open while someone uploads over a phone connection.
+
+Local development points the web app straight at the deployed engine; there is
+no laptop-sized version of a half-gigabyte model, and pretending otherwise
+would mean testing something other than what ships.
+"""
+from __future__ import annotations
+
+import inspect
+import logging
+import os
+import re
+import tempfile
+import uuid
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any, Awaitable, Callable, Protocol
+
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from .auth import RateLimit, TokenError, caller_id, mint, token_handle, verify
+from . import twin as T
+
+MAX_BYTES = 80 * 1024 * 1024
+MIN_BYTES = 10_000                       # smaller than any real ten-second clip
+MIN_HEIGHT_CM, MAX_HEIGHT_CM = 140.0, 210.0
+# Recognised by what the bytes say, not by what the upload was called. An
+# unknown extension used to be quietly renamed .mp4 and sent to a GPU anyway,
+# which made "anything under 80 MB" the real admission policy.
+CONTAINERS: list[tuple[str, Callable[[bytes], bool]]] = [
+    (".mp4", lambda b: len(b) > 12 and b[4:8] == b"ftyp"),
+    (".webm", lambda b: b[:4] == b"\x1a\x45\xdf\xa3"),        # EBML: WebM or MKV
+    (".avi", lambda b: b[:4] == b"RIFF" and b[8:12] == b"AVI "),
+]
+
+
+def sniff_container(data: bytes) -> str | None:
+    """The suffix the bytes deserve, or None if they are not a video at all."""
+    for suffix, looks_like in CONTAINERS:
+        if looks_like(data):
+            return suffix
+    return None
+
+
+def decodes_to_a_frame(data: bytes, suffix: str) -> bool:
+    """Whether a decoder can actually get a picture out of this.
+
+    Twelve bytes of header are cheap to forge and prove nothing; what costs
+    money is a GPU container spinning up on data that was never a video. This
+    runs on the CPU front, where a failed decode costs a fraction of a second.
+    """
+    import cv2
+
+    fd, name = tempfile.mkstemp(suffix=suffix)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        cap = cv2.VideoCapture(name)
+        try:
+            if not cap.isOpened():
+                return False
+            ok, frame = cap.read()
+            return bool(ok and frame is not None and frame.size)
+        finally:
+            cap.release()
+    except Exception:
+        log.exception("decode check blew up")
+        return False
+    finally:
+        Path(name).unlink(missing_ok=True)
+
+log = logging.getLogger("sartoria.engine")
+
+
+class SubmitFn(Protocol):
+    """Start the measurement and return a handle, or an awaitable of one.
+
+    Must not block: the endpoint that calls it is async, and a synchronous
+    hand-off to the GPU held the whole server for the seconds it took."""
+    def __call__(self, clip: bytes, height_cm: float, session_id: str,
+                 suffix: str, debug: bool) -> str | Awaitable[str]: ...
+
+
+class PollFn(Protocol):
+    """The result if it is ready, or None."""
+    def __call__(self, job_id: str) -> dict[str, Any] | None: ...
+
+
+def _vercel_origin_regex(project: str | None) -> str | None:
+    """Every Vercel deployment gets its own hostname, so previews are matched
+    by pattern rather than listed one by one.
+
+    Built here from a plain project name rather than carried in as a regex: an
+    escaped pattern cannot survive being set as an environment variable in a
+    container image, because the Dockerfile parser rejects the escape sequences
+    before Python ever sees them.
+    """
+    if not project:
+        return None
+    return "https://" + re.escape(project.strip()) + r"(-[a-z0-9-]+)?\.vercel\.app"
+
+
+class Rejected(Exception):
+    """Something the caller can fix, phrased for the caller."""
+
+
+# Which deployment this is. Production is the one real people reach, and a few
+# things are not merely discouraged there — they are absent.
+PRODUCTION = os.environ.get("SARTORIA_ENV", "dev").lower() == "production"
+
+# The diagnostic endpoint returns every frame's own answer and the mesh as a
+# picture: a scan of somebody's body, and their measurements several times
+# over. It used to be a handler that checked a flag and returned 404, which
+# means the code path existed and one environment variable stood between a
+# stranger and a picture of a customer. The route is not registered at all
+# now, and in production it cannot be registered — see make_app.
+DEBUG_ENABLED = (
+    os.environ.get("SARTORIA_DEBUG_ENDPOINT", "").lower() in ("1", "true", "yes")
+    and not PRODUCTION)
+
+# HTTP session identifiers are generated by the server.
+
+
+def _safe_session_id(given: str) -> str:
+    """Generate an opaque HTTP session ID, ignoring user-supplied labels.
+
+    Research tools may label local files separately. HTTP labels never enter
+    logs or responses because even identifier-shaped strings can be names.
+    """
+    return f"web-{uuid.uuid4().hex}"
+
+
+def _refusal(sid: str, height_cm: float, reason: str,
+             detail: str | None = None) -> dict[str, Any]:
+    """Every failure is an answer with a cause, never a bare 500."""
+    return {
+        "session_id": sid,
+        "height_cm": height_cm,
+        "status": "capture_rejected",
+        "reason": reason,
+        "all_reasons": [detail or reason],
+        "coaching": [],
+        "capture_quality": asdict(T.CaptureQuality(None, None, None, 0, 0.0, None, None)),
+        "processing_method": "nlf_smpl_hull_v1",
+    }
+
+
+def _insecure_dev() -> bool:
+    return (os.environ.get("SARTORIA_ENV", "dev").lower() == "dev"
+            and os.environ.get("SARTORIA_ALLOW_INSECURE_DEV") == "1")
+
+
+def _secret() -> str:
+    return os.environ.get("SARTORIA_TOKEN_SECRET", "").strip()
+
+
+def _require_token(request: Request, limiter: RateLimit | None = None) -> str | None:
+    """Refuse callers without a live token, and throttle the ones with one.
+
+    The endpoint starts a GPU container and its URL is in a public bundle, so
+    "nobody knows the address" was never a control.
+    """
+    secret = _secret()
+    if not secret:
+        if _insecure_dev():
+            return None
+        raise HTTPException(status_code=503, detail="engine authentication is not configured")
+
+    address = (request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+               or (request.client.host if request.client else None))
+    who = caller_id(address, secret)
+
+    header = request.headers.get("authorization", "")
+    token = header[7:] if header.lower().startswith("bearer ") else ""
+    try:
+        verify(token, secret, who=who)
+    except TokenError as e:
+        log.warning("rejected token: %s", e)
+        raise HTTPException(status_code=401, detail="not authorised")
+
+    if limiter is not None and not limiter.allow(who):
+        raise HTTPException(status_code=429, detail="too many requests")
+    return token
+
+
+def make_app(submit_fn: SubmitFn | Callable[..., str],
+             poll_fn: PollFn | Callable[..., Any]) -> FastAPI:
+    """Submit-and-poll, not one long request.
+
+    Measuring takes twenty seconds warm and nearly two minutes cold, and a
+    request held open that long does not survive: the platform answers a 303
+    redirect to a polling URL, which curl cannot follow across the method
+    change and a browser rejects outright — "Failed to fetch" after 150
+    seconds, with no useful error.
+
+    So the upload returns a job id as soon as the bytes are in, and the client
+    asks for the result. Which is what should have been built anyway: a phone
+    on a slow connection should not be holding a GPU open while it uploads.
+    """
+    if not _secret() and not _insecure_dev():
+        raise RuntimeError("Set SARTORIA_TOKEN_SECRET; unauthenticated access requires "
+                           "SARTORIA_ENV=dev and SARTORIA_ALLOW_INSECURE_DEV=1")
+
+    app = FastAPI(title="SartorIA measurement engine", version="0.3.0")
+
+    @app.middleware("http")
+    async def no_store(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    def result_token(job_id: str, submission_token: str | None) -> str | None:
+        if submission_token is None:
+            return None
+        return mint(_secret(), purpose=f"result:{job_id}",
+                    who=token_handle(submission_token))
+
+    # Two budgets, because the two endpoints cost different things. Starting a
+    # job spins up a GPU; asking whether it has finished does not, and a single
+    # job asks dozens of times — throttling both alike makes one scan look like
+    # an attack.
+    starts = RateLimit(limit=10, window_seconds=600)
+    polls = RateLimit(limit=1200, window_seconds=600)
+
+    origins = [o.strip().rstrip("/") for o in os.environ.get(
+        "SARTORIA_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000").split(",") if o.strip()]
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_origin_regex=_vercel_origin_regex(os.environ.get("SARTORIA_VERCEL_PROJECT")),
+        allow_methods=["POST", "GET"],
+        allow_headers=["*"],
+    )
+
+    def _read(upload: UploadFile) -> tuple[bytes, str]:
+        """The bytes and a suffix we chose, not one the caller did."""
+        data = upload.file.read(MAX_BYTES + 1)
+        if len(data) > MAX_BYTES:
+            raise Rejected("That clip is larger than 80 MB. Ten seconds is "
+                           "plenty — try recording a shorter one.")
+        if len(data) < MIN_BYTES:
+            raise Rejected("That file is too small to be a video. Record for "
+                           "about ten seconds.")
+        # The filename is the client's to choose and ends up as a temp-file
+        # suffix on the worker, so it is not consulted at all. Starting a GPU
+        # container on arbitrary bytes is expensive; reading the first twelve
+        # of them is not.
+        suffix = sniff_container(data)
+        if suffix is None or not decodes_to_a_frame(data, suffix):
+            raise Rejected("That file does not look like a video we can read. "
+                           "Record with your phone's own camera app.")
+        return data, suffix
+
+    def _height(value: float) -> float:
+        if not (MIN_HEIGHT_CM <= value <= MAX_HEIGHT_CM):
+            raise Rejected(
+                f"That height is outside the range we can work with "
+                f"({MIN_HEIGHT_CM:.0f}–{MAX_HEIGHT_CM:.0f} cm). The scale "
+                f"comes from it, so it has to be right.")
+        return float(value)
+
+    @app.get("/health")
+    def health() -> dict:
+        return {"ok": True, "engine": "nlf_smpl_hull_v1"}
+
+    @app.post("/analyse")
+    async def analyse(
+        request: Request,
+        video: UploadFile = File(...),
+        height_cm: float = Form(...),
+        session_id: str = Form(default=""),
+    ) -> JSONResponse:
+        """Take the clip, start the work, hand back a ticket."""
+        submission_token = _require_token(request, starts)
+        sid = _safe_session_id(session_id)
+        try:
+            clip, suffix = _read(video)
+            job_id = submit_fn(clip=clip, height_cm=_height(height_cm),
+                               session_id=sid, suffix=suffix, debug=False)
+            if inspect.isawaitable(job_id):
+                job_id = await job_id
+            return JSONResponse({"status": "accepted", "job_id": job_id,
+                                 "session_id": sid,
+                                 "result_token": result_token(job_id, submission_token)},
+                                status_code=202)
+        except Rejected as e:
+            return JSONResponse(_refusal(sid, height_cm, str(e)), status_code=200)
+        except Exception:
+            # The cause goes to the logs. What comes back is what the person can
+            # act on — an exception type and message is neither useful to them
+            # nor ours to hand out.
+            log.exception("submit failed for session %s", sid)
+            return JSONResponse(_refusal(
+                sid, height_cm,
+                "Something went wrong reading that clip. Try recording again — "
+                "ten seconds, whole body in frame."), status_code=200)
+
+    @app.get("/result/{job_id}")
+    def result(job_id: str, request: Request) -> JSONResponse:
+        """The twin once it exists. Until then, say so and say nothing else."""
+        submission_token = _require_token(request, polls)
+        if submission_token is not None:
+            try:
+                verify(request.headers.get("x-sartoria-result-token", ""), _secret(),
+                       purpose=f"result:{job_id}", who=token_handle(submission_token))
+            except TokenError:
+                raise HTTPException(status_code=403, detail="not authorised for this job") from None
+        try:
+            body = poll_fn(job_id=job_id)
+        except Exception:
+            log.exception("polling failed for job %s", job_id)
+            return JSONResponse(_refusal(
+                "", 0.0,
+                "The measurement failed partway through. Record again — ten "
+                "seconds, whole body in frame."), status_code=200)
+        if body is None:
+            return JSONResponse({"status": "working"}, status_code=200)
+        return JSONResponse(body)
+
+    if not DEBUG_ENABLED:
+        # Nothing further is defined. A route that exists and refuses is one
+        # mistake away from a route that exists and does not.
+        return app
+
+    @app.post("/debug")
+    async def debug_view(
+        request: Request,
+        video: UploadFile = File(...),
+        height_cm: float = Form(...),
+    ) -> JSONResponse:
+        """Everything /analyse computed, including each frame's own answer.
+
+        With a mesh method the useful diagnostic is not a picture — it is how
+        far the frames disagree. A site the frames agree on is measured; one
+        they do not is a guess wearing a number.
+
+        Only ever registered outside production, and it returns a rendering of
+        somebody's body, so it is for clips of people who know they are being
+        debugged.
+        """
+        submission_token = _require_token(request, starts)
+        try:
+            clip, suffix = _read(video)
+            job_id = submit_fn(clip=clip, height_cm=_height(height_cm),
+                               session_id="debug", suffix=suffix, debug=True)
+            if inspect.isawaitable(job_id):
+                job_id = await job_id
+            return JSONResponse({"status": "accepted", "job_id": job_id,
+                                 "result_token": result_token(job_id, submission_token)},
+                                status_code=202)
+        except Rejected as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+        except Exception:
+            log.exception("debug submit failed")
+            return JSONResponse({"error": "debug run failed"}, status_code=500)
+
+    return app

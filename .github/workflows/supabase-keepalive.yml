@@ -1,0 +1,69 @@
+name: Supabase keepalive
+
+# Supabase pauses Free-plan projects that show "low activity over a 7-day
+# period". Their own guidance is that "a few user requests to the database
+# each day" is what keeps a project awake — so the thing to avoid is not a
+# week of silence but a week of near-silence. This runs daily rather than
+# every few days: a scheduled run that GitHub delays or drops costs us one
+# day of margin instead of most of the week.
+
+on:
+  schedule:
+    # 06:17 UTC. The odd minute is deliberate — GitHub's scheduler is most
+    # congested on the hour, and that is where runs get delayed or skipped.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+# The job never reads the repository; it only talks to Supabase.
+permissions: {}
+
+concurrency:
+  group: supabase-keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    if: vars.ENABLE_SUPABASE_KEEPALIVE == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Knock on the database
+        env:
+          # Not a secret: this URL ships inside the browser bundle of every
+          # Supabase app. Holding it as a secret only made the logs unreadable,
+          # because GitHub then redacts it from every line it appears in.
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          : "${SUPABASE_URL:?missing repository variable SUPABASE_URL}"
+          : "${SUPABASE_PUBLISHABLE_KEY:?missing repository secret SUPABASE_PUBLISHABLE_KEY}"
+
+          # public.heartbeat() is `select now()` and nothing else: no table is
+          # read, no row is written. It exists so that this ping is a real
+          # query in Postgres rather than a request PostgREST can answer from
+          # its own cache, which would not count as database activity.
+          failed=0
+          for i in 1 2 3; do
+            code=$(curl -sS -o /tmp/heartbeat -w '%{http_code}' \
+              --retry 3 --retry-all-errors --retry-delay 5 --max-time 30 \
+              -X POST "$SUPABASE_URL/rest/v1/rpc/heartbeat" \
+              -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_PUBLISHABLE_KEY" \
+              -H 'Content-Type: application/json' \
+              -d '{}' || echo 000)
+
+            if [ "$code" = "200" ]; then
+              echo "ping $i/3 — awake, server clock $(cat /tmp/heartbeat)"
+            else
+              echo "ping $i/3 — HTTP $code: $(cat /tmp/heartbeat 2>/dev/null)" >&2
+              failed=1
+            fi
+
+            [ "$i" = 3 ] || sleep 20
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::The project did not answer. If it is already paused, resume it from the Supabase dashboard — pausing is reversible for 90 days." >&2
+            exit 1
+          fi

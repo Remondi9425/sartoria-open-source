@@ -1,0 +1,41 @@
+# Python and tools
+.venv/
+.venv-test/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Private research and generated output
+private/
+tmp/
+out/
+data/ground_truth.csv
+data/videos/
+data/frames/
+models/
+*.pptx
+ui-renders/
+SIZING_AGENTS.md
+
+# Personal recordings, regardless of location
+*.[mM][oO][vV]
+*.[mM][pP]4
+*.[mM]4[vV]
+*.[wW][eE][bB][mM]
+*.[aA][vV][iI]
+
+# Local environment and credentials
+.env*
+!.env.example
+*.pem
+*.key
+
+# OS and frontend
+.DS_Store
+node_modules/
+web/.next/
+web/out/
+web/next-env.d.ts
