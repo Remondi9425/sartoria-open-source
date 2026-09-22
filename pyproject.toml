@@ -16,7 +16,7 @@ dependencies = [
     "modal>=1.5",
     # cbor2 6.x publishes no macOS x86_64 wheel and falls back to building a
     # Rust extension. This machine is an Intel Mac.
-    "cbor2<6",
+    "cbor2<7",
 ]
 
 [dependency-groups]

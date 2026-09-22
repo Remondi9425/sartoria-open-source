@@ -16,7 +16,7 @@ anyio==4.15.1
     #   watchfiles
 attrs==26.1.0
     # via aiohttp
-cbor2==5.9.0
+cbor2==6.1.4
     # via
     #   modal
     #   sartoria-spike
