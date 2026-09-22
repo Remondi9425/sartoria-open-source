@@ -63,7 +63,7 @@ propcache==0.5.2
     # via
     #   aiohttp
     #   yarl
-protobuf==6.33.6
+protobuf==7.36.2
     # via modal
 pydantic==2.13.5
     # via fastapi
